@@ -56,6 +56,7 @@ func (c *ClientHello) Encode() []byte {
 	b.Write(c.Random.Encode())
 	binary.Write(b, binary.BigEndian, c.SessionLength)
 	b.Write(c.SessionID)
+	c.CipherSuitesLength = uint16(len(c.CipherSuites) * 2)
 	binary.Write(b, binary.BigEndian, c.CipherSuitesLength)
 	for _, cipherSuite := range c.CipherSuites {
 		binary.Write(b, binary.BigEndian, cipherSuite)

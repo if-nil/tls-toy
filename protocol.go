@@ -37,6 +37,15 @@ type TLSPlaintext struct {
 	Fragment []byte
 }
 
+func (t *TLSPlaintext) Encode() []byte {
+	b := bytes.NewBuffer([]byte{})
+	binary.Write(b, binary.BigEndian, t.Type)
+	b.Write(t.Version.Encode())
+	binary.Write(b, binary.BigEndian, t.Length)
+	b.Write(t.Fragment)
+	return b.Bytes()
+}
+
 // ////////////////// TLS Handshake Protocol //////////////////
 // TLS Handshake Protocol 用于建立 TLS 连接，报文的位置在Record Layer 的 Fragment 中
 
@@ -67,6 +76,7 @@ type Handshake struct {
 func (h *Handshake) Encode() []byte {
 	b := bytes.NewBuffer([]byte{})
 	binary.Write(b, binary.BigEndian, h.MsgType)
+	h.Length = uint32(len(h.Body.Encode()))
 	b.Write([]byte{byte(h.Length >> 16), byte(h.Length >> 8), byte(h.Length)})
 	b.Write(h.Body.Encode())
 	return b.Bytes()
