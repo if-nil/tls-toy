@@ -7,6 +7,7 @@ import (
 
 type Encoder interface {
 	Encode() []byte
+	Decode([]byte)
 }
 
 // ////////////////// TLS Record Layer //////////////////
@@ -30,6 +31,11 @@ func (p *ProtocolVersion) Encode() []byte {
 	return []byte{p.Major, p.Minor}
 }
 
+func (p *ProtocolVersion) Decode(b []byte) {
+	p.Major = b[0]
+	p.Minor = b[1]
+}
+
 type TLSPlaintext struct {
 	Type     ContentType
 	Version  ProtocolVersion
@@ -44,6 +50,13 @@ func (t *TLSPlaintext) Encode() []byte {
 	binary.Write(b, binary.BigEndian, t.Length)
 	b.Write(t.Fragment)
 	return b.Bytes()
+}
+
+func (t *TLSPlaintext) Decode(b []byte) {
+	t.Type = ContentType(b[0])
+	t.Version.Decode(b[1:3])
+	t.Length = binary.BigEndian.Uint16(b[3:5])
+	t.Fragment = b[5:]
 }
 
 // ////////////////// TLS Handshake Protocol //////////////////
@@ -82,6 +95,14 @@ func (h *Handshake) Encode() []byte {
 	return b.Bytes()
 }
 
+func (h *Handshake) Decode(b []byte) {
+	h.MsgType = HandshakeType(b[0])
+	h.Length = uint32(b[1])<<16 + uint32(b[2])<<8 + uint32(b[3])
+	if h.Length != 0 {
+		h.Body.Decode(b[4:])
+	}
+}
+
 // CipherSuite 加密套件
 type CipherSuite uint16
 
@@ -99,4 +120,13 @@ func (r *Random) Encode() []byte {
 	binary.Write(b, binary.BigEndian, r.GMTUnixTime)
 	b.Write(r.RandomBytes[:])
 	return b.Bytes()
+}
+
+func (r *Random) Decode(b []byte) {
+	r.GMTUnixTime = binary.BigEndian.Uint32(b[:4])
+	copy(r.RandomBytes[:], b[4:32])
+}
+
+func (r Random) String() string {
+	return "{///}"
 }
