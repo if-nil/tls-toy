@@ -48,7 +48,9 @@ func (t *TLSPlaintext) Encode() []byte {
 	binary.Write(b, binary.BigEndian, t.Type)
 	b.Write(t.Version.Encode())
 	binary.Write(b, binary.BigEndian, t.Length)
-	b.Write(t.Fragment)
+	if t.Fragment != nil && len(t.Fragment) != 0 {
+		b.Write(t.Fragment)
+	}
 	return b.Bytes()
 }
 
@@ -56,7 +58,7 @@ func (t *TLSPlaintext) Decode(b []byte) {
 	t.Type = ContentType(b[0])
 	t.Version.Decode(b[1:3])
 	t.Length = binary.BigEndian.Uint16(b[3:5])
-	t.Fragment = b[5:]
+	t.Fragment = b[5 : t.Length+5]
 }
 
 // ////////////////// TLS Handshake Protocol //////////////////

@@ -6,6 +6,8 @@ import (
 )
 
 type HelloRequest struct {
+	rawBytes []byte
+
 	ClientVersion     ProtocolVersion
 	Random            Random
 	SessionLength     uint8
@@ -19,6 +21,9 @@ type HelloRequest struct {
 }
 
 func (h *HelloRequest) Encode() []byte {
+	if len(h.rawBytes) != 0 {
+		return h.rawBytes
+	}
 	b := bytes.NewBuffer([]byte{})
 	b.Write(h.ClientVersion.Encode())
 	b.Write(h.Random.Encode())
@@ -38,6 +43,8 @@ func (h *HelloRequest) Encode() []byte {
 }
 
 func (h *HelloRequest) Decode(b []byte) {
+	h.rawBytes = b
+
 	h.ClientVersion.Decode(b[0:2])
 	h.Random.Decode(b[2:34])
 	h.SessionLength = b[34]
@@ -111,15 +118,27 @@ func (s ServerHello) Decode(b []byte) {
 }
 
 type Certificates struct {
+	rawBytes []byte
+
 	CertificatesLength uint32
 	Certificates       []Certificate
 }
 
 func (c *Certificates) Encode() []byte {
-	return nil
+	if len(c.rawBytes) != 0 {
+		return c.rawBytes
+	}
+	b := bytes.NewBuffer([]byte{})
+	binary.Write(b, binary.BigEndian, c.CertificatesLength)
+	for _, certificates := range c.Certificates {
+		binary.Write(b, binary.BigEndian, certificates.Encode())
+	}
+	return b.Bytes()
 }
 
 func (c *Certificates) Decode(b []byte) {
+	c.rawBytes = b
+
 	c.CertificatesLength = uint32(b[0])<<16 + uint32(b[1])<<8 + uint32(b[2])
 	c.Certificates = []Certificate{}
 	length := 0
@@ -146,6 +165,8 @@ func (c *Certificate) Decode(b []byte) {
 }
 
 type ECServerParams struct {
+	rawByte []byte
+
 	Raw                []byte
 	CurveType          uint8
 	NamedCurve         uint16
@@ -158,10 +179,12 @@ type ECServerParams struct {
 }
 
 func (e *ECServerParams) Encode() []byte {
-	return nil
+	return e.rawByte
 }
 
 func (e *ECServerParams) Decode(b []byte) {
+	e.rawByte = b
+
 	e.CurveType = b[0]
 	e.NamedCurve = binary.BigEndian.Uint16(b[1:3])
 	e.PubkeyLen = b[3]

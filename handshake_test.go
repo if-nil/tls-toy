@@ -2,12 +2,15 @@ package tls_toy
 
 import (
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
+	"golang.org/x/crypto/cryptobyte"
 	"log"
 	"net"
 	"testing"
@@ -42,6 +45,11 @@ func TestClientHello(t *testing.T) {
 			buffChan <- bufCopy
 		}
 	}()
+
+	prf := func(result, secret, label, seed []byte) {
+		pHash(result, secret, label, seed, sha256.New)
+	}
+	finishedHash := crypto.SHA256.New()
 
 	// clientHello ------------
 	clientHello := &ClientHello{
@@ -176,6 +184,7 @@ func TestClientHello(t *testing.T) {
 	if err != nil {
 		t.Fatal("tcp client error", err)
 	}
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// serverHello ------------
 	buf := <-buffChan
@@ -184,6 +193,7 @@ func TestClientHello(t *testing.T) {
 	handshake.Decode(tlsPlainText.Fragment)
 	serverHello := handshake.Body.(*HelloRequest)
 	fmt.Printf("%+v\n", serverHello)
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// certificate ------------
 	buf = buf[tlsPlainText.Length+5:]
@@ -192,6 +202,7 @@ func TestClientHello(t *testing.T) {
 	handshake.Decode(tlsPlainText.Fragment)
 	certificate := handshake.Body.(*Certificates)
 	fmt.Printf("%+v\n", certificate)
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// verify certificate ------------
 	certs := make([]*x509.Certificate, len(certificate.Certificates))
@@ -239,6 +250,7 @@ func TestClientHello(t *testing.T) {
 	if err != nil {
 		t.Fatal("verify serverKeyExchange error", err)
 	}
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// serverHelloDone ------------
 	buf = buf[tlsPlainText.Length+5:]
@@ -247,6 +259,7 @@ func TestClientHello(t *testing.T) {
 	handshake.Decode(tlsPlainText.Fragment)
 	serverHelloDone := handshake.Body.(*HelloRequest)
 	fmt.Printf("%+v\n", serverHelloDone)
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// clientKeyExchange ------------
 	curve := elliptic.P256()
@@ -277,6 +290,7 @@ func TestClientHello(t *testing.T) {
 	tlsPlainText.Fragment = handshake.Encode()
 	tlsPlainText.Length = uint16(len(tlsPlainText.Fragment))
 	tlsPlainTextBytes = tlsPlainText.Encode()
+	finishedHash.Write(tlsPlainText.Fragment)
 
 	// changeCipherSpec ------------
 	ccs := ChangeCipherSpec(1)
@@ -289,26 +303,53 @@ func TestClientHello(t *testing.T) {
 		Fragment: ccs.Encode(),
 		Length:   1,
 	}
-	tlsPlainTextBytes = append(tlsPlainTextBytes, tlsPlainText.Encode()...)
-	_, err = conn.Write(tlsPlainTextBytes)
+	sendbuff := append(tlsPlainTextBytes, tlsPlainText.Encode()...)
+
+	// masterSecret ------------
+	seed := make([]byte, 0, len(clientHello.Random.Encode())+len(serverHello.Random.Encode()))
+	seed = append(seed, clientHello.Random.Encode()...)
+	seed = append(seed, serverHello.Random.Encode()...)
+	masterSecret := make([]byte, 48)
+	preMasterSecret = []byte{35, 75, 133, 185, 224, 159, 85, 12, 78, 146, 62, 213, 154, 53, 4, 108, 169, 178, 222, 100, 209, 181, 227, 161, 175, 248, 124, 116, 192, 149, 113, 56}
+	seed = []byte{146, 147, 129, 47, 188, 140, 105, 19, 242, 175, 97, 113, 214, 235, 97, 210, 230, 40, 11, 204, 198, 188, 216, 241, 129, 168, 108, 83, 160, 85, 142, 58, 211, 114, 245, 211, 223, 197, 198, 172, 222, 7, 23, 43, 145, 220, 1, 60, 106, 197, 11, 140, 55, 225, 220, 168, 21, 25, 106, 16, 175, 74, 215, 215}
+
+	prf(masterSecret, preMasterSecret, []byte("master secret"), seed)
 
 	// finished ------------
-	prf := func(result, secret, label, seed []byte) {
-		pHash(result, secret, label, seed, sha256.New)
-	}
-	hash := crypto.SHA256.New()
-	hash.Write(clientHello.Encode())
+	verifyData := make([]byte, 12)
+	prf(verifyData, masterSecret, []byte("client finished"), finishedHash.Sum(nil))
+	var b cryptobyte.Builder
+	b.AddUint8(uint8(FinishedHandshakeType))
+	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
+		b.AddBytes(verifyData)
+	})
+	verifyData = b.BytesOrPanic()
 
-	finished := &Finished{}
-	handshake = &Handshake{
-		MsgType: FinishedHandshakeType,
-		Length:  0,
-		Body:    finished,
+	n := 2*0 + 2*16 + 2*4
+	keyMaterial := make([]byte, n)
+	prf(keyMaterial, masterSecret, []byte("key expansion"), seed)
+	clientKey := keyMaterial[:16]
+	noncePrefix := keyMaterial[:4]
+	aes1, err := aes.NewCipher(clientKey)
+	if err != nil {
+		t.Fatal("new cipher error", err)
 	}
-	tlsPlainText.Fragment = handshake.Encode()
-	tlsPlainText.Length = uint16(len(tlsPlainText.Fragment))
-	// tlsPlainTextBytes = append(tlsPlainTextBytes, tlsPlainText.Encode()...)
-	// _, err = conn.Write(tlsPlainTextBytes)
-	_ = prf
+	record := make([]byte, 13)
+	aead, err := cipher.NewGCM(aes1)
+	nonce := make([]byte, 12)
+	copy(nonce, noncePrefix)
+	tlsPlainText.Type = HandshakeContentType
+	tlsPlainText.Fragment = nil
+	tlsPlainText.Length = 16
+	tlsPlainTextBytes = tlsPlainText.Encode()
+	copy(record, tlsPlainTextBytes)
+	record = aead.Seal(record, nonce, verifyData, append(make([]byte, 8), tlsPlainTextBytes...))
+
+	n = len(record) - 5
+	record[3] = byte(n >> 8)
+	record[4] = byte(n)
+	sendbuff = append(sendbuff, record...)
+	_, err = conn.Write(sendbuff)
+
 	select {}
 }
