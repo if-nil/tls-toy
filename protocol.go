@@ -3,6 +3,7 @@ package tls_toy
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 )
 
 type Encoder interface {
@@ -113,6 +114,7 @@ type CompressionMethod uint8
 type SessionID []byte
 
 type Random struct {
+	raw         []byte
 	GMTUnixTime uint32
 	RandomBytes [28]byte
 }
@@ -130,5 +132,5 @@ func (r *Random) Decode(b []byte) {
 }
 
 func (r Random) String() string {
-	return "{///}"
+	return hex.EncodeToString(r.Encode())
 }

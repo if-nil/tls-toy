@@ -50,9 +50,9 @@ func (h *HelloRequest) Decode(b []byte) {
 	h.SessionLength = b[34]
 	h.SessionID = b[35 : 35+h.SessionLength]
 	h.CipherSuites = []CipherSuite{
-		CipherSuite(binary.BigEndian.Uint16(b[35:37])),
+		CipherSuite(binary.BigEndian.Uint16(b[35+h.SessionLength : 37+h.SessionLength])),
 	}
-	h.CompressionLength = b[37]
+	h.CompressionLength = b[37+h.SessionLength]
 	h.Compression = []CompressionMethod{}
 	for i := 0; i < int(h.CompressionLength); i++ {
 		h.Compression = append(h.Compression, CompressionMethod(b[38+int(h.SessionLength)+int(h.CipherSuiteLength)+i]))
@@ -95,6 +95,22 @@ func (c *ClientHello) Encode() []byte {
 }
 
 func (c *ClientHello) Decode(b []byte) {
+	c.ClientVersion.Decode(b[0:2])
+	c.Random.Decode(b[2:34])
+	c.SessionLength = b[34]
+	c.SessionID = b[35 : 35+c.SessionLength]
+	c.CipherSuitesLength = binary.BigEndian.Uint16(b[35+c.SessionLength : 37+c.SessionLength])
+	c.CipherSuites = []CipherSuite{}
+	for i := 0; i < int(c.CipherSuitesLength); i += 2 {
+		c.CipherSuites = append(c.CipherSuites, CipherSuite(binary.BigEndian.Uint16(b[37+c.SessionLength+uint8(i):39+c.SessionLength+uint8(i)])))
+	}
+	c.CompressionLength = b[37+uint16(c.SessionLength)+c.CipherSuitesLength]
+	c.Compression = []CompressionMethod{}
+	for i := 0; i < int(c.CompressionLength); i++ {
+		c.Compression = append(c.Compression, CompressionMethod(b[38+uint16(c.SessionLength)+c.CipherSuitesLength+uint16(i)]))
+	}
+	c.ExtensionsLength = binary.BigEndian.Uint16(b[38+uint16(c.SessionLength)+c.CipherSuitesLength+uint16(c.CompressionLength) : 40+uint16(c.SessionLength)+c.CipherSuitesLength+uint16(c.CompressionLength)])
+	c.Extensions = b[40+uint16(c.SessionLength)+c.CipherSuitesLength+uint16(c.CompressionLength) : 40+uint16(c.SessionLength)+c.CipherSuitesLength+uint16(c.CompressionLength)+c.ExtensionsLength]
 }
 
 type ServerHello struct {

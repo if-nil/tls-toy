@@ -9,15 +9,35 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"golang.org/x/crypto/cryptobyte"
 	"log"
+	rand2 "math/rand"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
 
+// var (
+// 	clientHelloBuf = []byte{0x01, 0x00, 0x01, 0x0a, 0x03, 0x03, 0x6c, 0x20, 0x01, 0x04, 0x74, 0x74, 0xeb, 0x66, 0x55, 0xe1, 0xa3, 0x20, 0x85, 0x34, 0x62, 0x35, 0x37, 0xb9, 0xe5, 0x06, 0x76, 0xf7, 0x3b, 0xaa, 0xd5, 0xe7, 0xb5, 0xbf, 0x2e, 0xf1, 0xdc, 0xe9, 0x20, 0xe1, 0xee, 0xc7, 0xe9, 0xc3, 0x7d, 0x6c, 0x55, 0x39, 0xb9, 0x89, 0x04, 0x55, 0xcc, 0xff, 0x80, 0x75, 0xa9, 0x01, 0xf6, 0xc1, 0x8d, 0xf6, 0xf8, 0x39, 0x77, 0x1b, 0x74, 0x00, 0x77, 0x85, 0x86, 0x00, 0x26, 0xc0, 0x2b, 0xc0, 0x2f, 0xc0, 0x2c, 0xc0, 0x30, 0xcc, 0xa9, 0xcc, 0xa8, 0xc0, 0x09, 0xc0, 0x13, 0xc0, 0x0a, 0xc0, 0x14, 0x00, 0x9c, 0x00, 0x9d, 0x00, 0x2f, 0x00, 0x35, 0xc0, 0x12, 0x00, 0x0a, 0x13, 0x01, 0x13, 0x02, 0x13, 0x03, 0x01, 0x00, 0x00, 0x9b, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x0c, 0x00, 0x00, 0x09, 0x62, 0x61, 0x69, 0x64, 0x75, 0x2e, 0x63, 0x6f, 0x6d, 0x00, 0x05, 0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x0a, 0x00, 0x08, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18, 0x00, 0x19, 0x00, 0x0b, 0x00, 0x02, 0x01, 0x00, 0x00, 0x0d, 0x00, 0x1a, 0x00, 0x18, 0x08, 0x04, 0x04, 0x03, 0x08, 0x07, 0x08, 0x05, 0x08, 0x06, 0x04, 0x01, 0x05, 0x01, 0x06, 0x01, 0x05, 0x03, 0x06, 0x03, 0x02, 0x01, 0x02, 0x03, 0xff, 0x01, 0x00, 0x01, 0x00, 0x00, 0x10, 0x00, 0x0e, 0x00, 0x0c, 0x02, 0x68, 0x32, 0x08, 0x68, 0x74, 0x74, 0x70, 0x2f, 0x31, 0x2e, 0x31, 0x00, 0x12, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x05, 0x04, 0x03, 0x04, 0x03, 0x03, 0x00, 0x33, 0x00, 0x26, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20, 0x34, 0xea, 0x52, 0x2a, 0xe2, 0x7d, 0x88, 0x66, 0x03, 0xf8, 0x67, 0xa5, 0x0d, 0x99, 0x62, 0x92, 0x13, 0x75, 0xf9, 0x8d, 0x6d, 0x18, 0xb1, 0x43, 0x33, 0xd2, 0x49, 0x4d, 0x83, 0x00, 0x2f, 0x37}
+// 	gHandshake     = &Handshake{}
+// )
+//
+// func init() {
+// 	gHandshake.Body = &ClientHello{}
+// 	gHandshake.Decode(clientHelloBuf[:])
+// }
+
 func TestClientHello(t *testing.T) {
+	filePath := "D://tmp/sslkeylog.log"
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Println("文件打开失败", err)
+	}
+	// 及时关闭file句柄
+	defer file.Close()
 
 	buffChan := make(chan []byte)
 
@@ -46,17 +66,20 @@ func TestClientHello(t *testing.T) {
 		}
 	}()
 
-	prf := func(result, secret, label, seed []byte) {
-		pHash(result, secret, label, seed, sha256.New)
-	}
 	finishedHash := crypto.SHA256.New()
 
 	// clientHello ------------
+	var randByte [28]byte
+	rand2.Seed(time.Now().UnixNano())
+	for i := 0; i < 28; i++ {
+		randByte[i] = byte(rand2.Intn(256))
+	}
 	clientHello := &ClientHello{
 		ClientVersion: ProtocolVersion{0x03, 0x03},
 		Random: Random{
 			GMTUnixTime: 0x649ebde5,
-			RandomBytes: [28]byte{0x81, 0xf1, 0x6d, 0x49, 0x06, 0xae, 0x05, 0x13, 0x36, 0x96, 0xaa, 0xfc, 0xb7, 0x8e, 0xe7, 0x68, 0x4e, 0x3d, 0x0a, 0x4b, 0xff, 0xbf, 0xad, 0x0e, 0x8a, 0x9b, 0xf4, 0xaf},
+			// RandomBytes: [28]byte{0x81, 0xf1, 0x6d, 0x49, 0x06, 0xae, 0x05, 0x13, 0x36, 0x96, 0xaa, 0xfc, 0xb7, 0x8e, 0xe7, 0x68, 0x4e, 0x3d, 0x0a, 0x4b, 0xff, 0xbf, 0xad, 0x0e, 0x8a, 0x9b, 0xf4, 0xaf},
+			RandomBytes: randByte,
 			// RandomBytes: func() [28]byte {
 			// 	randomBytes := make([]byte, 28)
 			// 	rand.Read(randomBytes)
@@ -163,8 +186,17 @@ func TestClientHello(t *testing.T) {
 			0x00,
 		},
 		ExtensionsLength: 72,
-		Extensions:       []byte{0x00, 0x0d, 0x00, 0x16, 0x00, 0x14, 0x06, 0x03, 0x06, 0x01, 0x05, 0x03, 0x05, 0x01, 0x04, 0x03, 0x04, 0x01, 0x03, 0x03, 0x03, 0x01, 0x02, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x00, 0x18, 0x00, 0x16, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x18, 0x00, 0x1b, 0x00, 0x17, 0x00, 0x1a, 0x00, 0x15, 0x00, 0x13, 0x00, 0x12, 0x00, 0x1d, 0x00, 0x1e, 0x00, 0x0b, 0x00, 0x02, 0x01, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x17, 0x00, 0x00, 0x00, 0x23, 0x00, 0x00},
+		Extensions: []byte{0x00, 0x0d, 0x00, 0x16, 0x00, 0x14, 0x06, 0x03, 0x06,
+			0x01, 0x05, 0x03, 0x05, 0x01, 0x04, 0x03, 0x04, 0x01, 0x03, 0x03, 0x03,
+			0x01, 0x02, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x00, 0x18, 0x00, 0x16, 0x00,
+			0x19, 0x00, 0x1c, 0x00, 0x18, 0x00, 0x1b, 0x00, 0x17, 0x00, 0x1a, 0x00,
+			0x15, 0x00, 0x13, 0x00, 0x12, 0x00, 0x1d, 0x00, 0x1e, 0x00, 0x0b, 0x00,
+			0x02, 0x01, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x17, 0x00, 0x00, 0x00,
+			0x23, 0x00, 0x00, 0x00, 0x2d, 0x00, 0x02, 0x01, 0x01},
+		// ExtensionsLength: gHandshake.Body.(*ClientHello).ExtensionsLength,
+		// Extensions:       gHandshake.Body.(*ClientHello).Extensions,
 	}
+	clientHello.ExtensionsLength = uint16(len(clientHello.Extensions))
 	handshake := &Handshake{
 		MsgType: ClientHelloHandshakeType,
 		Length:  0,
@@ -180,29 +212,30 @@ func TestClientHello(t *testing.T) {
 	}
 	tlsPlainText.Length = uint16(len(tlsPlainText.Fragment))
 	tlsPlainTextBytes := tlsPlainText.Encode()
+	finishedHash.Write(tlsPlainText.Fragment)
 	_, err = conn.Write(tlsPlainTextBytes)
 	if err != nil {
 		t.Fatal("tcp client error", err)
 	}
-	finishedHash.Write(tlsPlainText.Fragment)
+	file.Write([]byte("CLIENT_RANDOM " + clientHello.Random.String() + " "))
 
 	// serverHello ------------
 	buf := <-buffChan
 	tlsPlainText.Decode(buf)
+	finishedHash.Write(tlsPlainText.Fragment)
 	handshake.Body = &HelloRequest{}
 	handshake.Decode(tlsPlainText.Fragment)
 	serverHello := handshake.Body.(*HelloRequest)
 	fmt.Printf("%+v\n", serverHello)
-	finishedHash.Write(tlsPlainText.Fragment)
 
 	// certificate ------------
 	buf = buf[tlsPlainText.Length+5:]
 	tlsPlainText.Decode(buf)
+	finishedHash.Write(tlsPlainText.Fragment)
 	handshake.Body = &Certificates{}
 	handshake.Decode(tlsPlainText.Fragment)
 	certificate := handshake.Body.(*Certificates)
 	fmt.Printf("%+v\n", certificate)
-	finishedHash.Write(tlsPlainText.Fragment)
 
 	// verify certificate ------------
 	certs := make([]*x509.Certificate, len(certificate.Certificates))
@@ -231,6 +264,7 @@ func TestClientHello(t *testing.T) {
 	// serverKeyExchange ------------
 	buf = buf[tlsPlainText.Length+5:]
 	tlsPlainText.Decode(buf)
+	finishedHash.Write(tlsPlainText.Fragment)
 	handshake.Body = &ECServerParams{}
 	handshake.Decode(tlsPlainText.Fragment)
 	ecServerParams := handshake.Body.(*ECServerParams)
@@ -250,16 +284,15 @@ func TestClientHello(t *testing.T) {
 	if err != nil {
 		t.Fatal("verify serverKeyExchange error", err)
 	}
-	finishedHash.Write(tlsPlainText.Fragment)
 
 	// serverHelloDone ------------
 	buf = buf[tlsPlainText.Length+5:]
 	tlsPlainText.Decode(buf)
+	finishedHash.Write(tlsPlainText.Fragment)
 	handshake.Body = &HelloRequest{}
 	handshake.Decode(tlsPlainText.Fragment)
 	serverHelloDone := handshake.Body.(*HelloRequest)
 	fmt.Printf("%+v\n", serverHelloDone)
-	finishedHash.Write(tlsPlainText.Fragment)
 
 	// clientKeyExchange ------------
 	curve := elliptic.P256()
@@ -304,52 +337,134 @@ func TestClientHello(t *testing.T) {
 		Length:   1,
 	}
 	sendbuff := append(tlsPlainTextBytes, tlsPlainText.Encode()...)
+	// _, err = conn.Write(sendbuff)
+	// if err != nil {
+	// 	t.Fatal("tcp client error", err)
+	// }
+	// sendbuff = []byte{}
 
 	// masterSecret ------------
 	seed := make([]byte, 0, len(clientHello.Random.Encode())+len(serverHello.Random.Encode()))
 	seed = append(seed, clientHello.Random.Encode()...)
 	seed = append(seed, serverHello.Random.Encode()...)
 	masterSecret := make([]byte, 48)
-	preMasterSecret = []byte{35, 75, 133, 185, 224, 159, 85, 12, 78, 146, 62, 213, 154, 53, 4, 108, 169, 178, 222, 100, 209, 181, 227, 161, 175, 248, 124, 116, 192, 149, 113, 56}
-	seed = []byte{146, 147, 129, 47, 188, 140, 105, 19, 242, 175, 97, 113, 214, 235, 97, 210, 230, 40, 11, 204, 198, 188, 216, 241, 129, 168, 108, 83, 160, 85, 142, 58, 211, 114, 245, 211, 223, 197, 198, 172, 222, 7, 23, 43, 145, 220, 1, 60, 106, 197, 11, 140, 55, 225, 220, 168, 21, 25, 106, 16, 175, 74, 215, 215}
-
-	prf(masterSecret, preMasterSecret, []byte("master secret"), seed)
+	prf12(sha256.New)(masterSecret, preMasterSecret, []byte("master secret"), seed)
+	file.Write([]byte(hex.EncodeToString(masterSecret) + "\n"))
 
 	// finished ------------
 	verifyData := make([]byte, 12)
-	prf(verifyData, masterSecret, []byte("client finished"), finishedHash.Sum(nil))
+	prf12(sha256.New)(verifyData, masterSecret, []byte("client finished"), finishedHash.Sum(nil))
 	var b cryptobyte.Builder
 	b.AddUint8(uint8(FinishedHandshakeType))
 	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddBytes(verifyData)
 	})
-	verifyData = b.BytesOrPanic()
-
-	n := 2*0 + 2*16 + 2*4
-	keyMaterial := make([]byte, n)
-	prf(keyMaterial, masterSecret, []byte("key expansion"), seed)
+	data := b.BytesOrPanic()
+	seed = make([]byte, 0, len(clientHello.Random.Encode())+len(serverHello.Random.Encode()))
+	seed = append(seed, serverHello.Random.Encode()...)
+	seed = append(seed, clientHello.Random.Encode()...)
+	keyMaterial := make([]byte, 40)
+	prf12(sha256.New)(keyMaterial, masterSecret, []byte("key expansion"), seed)
 	clientKey := keyMaterial[:16]
-	noncePrefix := keyMaterial[:4]
+	noncePrefix := keyMaterial[16*2 : 16*2+4]
+	serverKey := keyMaterial[16 : 16*2]
+	serverNoncePrefix := keyMaterial[16*2+4 : 16*2+4+4]
 	aes1, err := aes.NewCipher(clientKey)
 	if err != nil {
 		t.Fatal("new cipher error", err)
 	}
 	record := make([]byte, 13)
 	aead, err := cipher.NewGCM(aes1)
+	if err != nil {
+		t.Fatal("new gcm error", err)
+	}
+	serverAes, err := aes.NewCipher(serverKey)
+	if err != nil {
+		t.Fatal("new cipher error", err)
+	}
+	serverAead, err := cipher.NewGCM(serverAes)
+	if err != nil {
+		t.Fatal("new gcm error", err)
+	}
 	nonce := make([]byte, 12)
 	copy(nonce, noncePrefix)
 	tlsPlainText.Type = HandshakeContentType
+
 	tlsPlainText.Fragment = nil
 	tlsPlainText.Length = 16
 	tlsPlainTextBytes = tlsPlainText.Encode()
 	copy(record, tlsPlainTextBytes)
-	record = aead.Seal(record, nonce, verifyData, append(make([]byte, 8), tlsPlainTextBytes...))
+	record = aead.Seal(record, nonce, data, append(make([]byte, 8), tlsPlainTextBytes...))
 
-	n = len(record) - 5
+	n := len(record) - 5
 	record[3] = byte(n >> 8)
 	record[4] = byte(n)
 	sendbuff = append(sendbuff, record...)
 	_, err = conn.Write(sendbuff)
+
+	// new session ticket ------------
+	buf = <-buffChan
+	tlsPlainText.Decode(buf)
+
+	// changeCipherSpec ------------
+	buf = buf[tlsPlainText.Length+5:]
+	tlsPlainText.Decode(buf)
+
+	// finished ------------
+	buf = buf[tlsPlainText.Length+5:]
+	tlsPlainText.Decode(buf)
+	nonce1 := tlsPlainText.Fragment[:8]
+	serverNonce := make([]byte, 12)
+	copy(serverNonce, serverNoncePrefix)
+	copy(serverNonce[4:], nonce1)
+	tlsPlainText.Fragment = tlsPlainText.Fragment[8:]
+	var additionalData []byte
+	var scratchBuf [13]byte
+	additionalData = append(scratchBuf[:0], make([]byte, 8)...)
+	additionalData = append(additionalData, buf[:3]...)
+	n = len(tlsPlainText.Fragment) - serverAead.Overhead()
+	additionalData = append(additionalData, byte(n>>8), byte(n))
+	plaintext, err := serverAead.Open(tlsPlainText.Fragment[:0], serverNonce, tlsPlainText.Fragment, additionalData)
+	if err != nil {
+		t.Fatal("open error", err)
+	}
+	_ = plaintext
+
+	// application data ------------
+	httpText := "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nUser-Agent: curl/8.0.1Accept: */*\r\n\r\n"
+	tlsPlainText.Type = ApplicationDataContentType
+	tlsPlainText.Fragment = []byte(httpText)
+	tlsPlainText.Length = uint16(len(tlsPlainText.Fragment))
+	tlsPlainTextBytes = tlsPlainText.Encode()
+	record = make([]byte, 13)
+	copy(record, tlsPlainTextBytes[:5])
+	record[12] = 1
+	nonce[11] = 1
+	record = aead.Seal(record, nonce, tlsPlainText.Fragment, append([]byte{0, 0, 0, 0, 0, 0, 0, 1}, tlsPlainTextBytes[:5]...))
+	n = len(record) - 5
+	record[3] = byte(n >> 8)
+	record[4] = byte(n)
+	_, err = conn.Write(record)
+
+	// recv application data ------------
+	buf = <-buffChan
+	tlsPlainText.Decode(buf)
+	nonce1 = tlsPlainText.Fragment[:8]
+	serverNonce = make([]byte, 12)
+	copy(serverNonce, serverNoncePrefix)
+	copy(serverNonce[4:], nonce1)
+	tlsPlainText.Fragment = tlsPlainText.Fragment[8:]
+	additionalData = []byte{}
+	scratchBuf = [13]byte{}
+	additionalData = append(scratchBuf[:0], []byte{0, 0, 0, 0, 0, 0, 0, 1}...)
+	additionalData = append(additionalData, buf[:3]...)
+	n = len(tlsPlainText.Fragment) - serverAead.Overhead()
+	additionalData = append(additionalData, byte(n>>8), byte(n))
+	plaintext, err = serverAead.Open(tlsPlainText.Fragment[:0], serverNonce, tlsPlainText.Fragment, additionalData)
+	if err != nil {
+		t.Fatal("open error", err)
+	}
+	fmt.Print(string(plaintext))
 
 	select {}
 }
